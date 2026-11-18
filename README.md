@@ -65,7 +65,9 @@ mp305 watch --interval 200 --csv run.csv   # also append timestamped samples to 
 mp305 watch --json --count 10           # JSON lines, for scripts
 
 mp305 settings                          # system settings
-mp305 settings set --volume 2           # change one field (read-modify-write)
+mp305 settings set volume 1             # change fields (KEY VALUE, KEY=VALUE or --KEY VALUE)
+mp305 settings set volume=0 screen-off 2  # several at once; keys: power-limit, volume,
+                                        #   screen-off, shutdown, screen-direction
 
 mp305 mode dc|charge                    # switch operating mode
 mp305 charge status

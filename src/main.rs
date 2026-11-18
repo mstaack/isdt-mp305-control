@@ -121,15 +121,28 @@ enum SettingsCmd {
         json: bool,
     },
     /// Change system settings (read-modify-write; unspecified fields are kept).
+    ///
+    /// Give fields as `KEY VALUE`, `KEY=VALUE` or `--KEY VALUE`, e.g.
+    /// `mp305 settings set volume 1 screen-off 2`.
+    /// Keys: power-limit, volume, screen-off, shutdown, screen-direction.
+    #[command(verbatim_doc_comment)]
     Set {
+        /// Settings as `KEY VALUE` or `KEY=VALUE` pairs.
+        #[arg(value_name = "KEY VALUE", allow_hyphen_values = true)]
+        pairs: Vec<String>,
+        /// Power limit (raw device value, e.g. 90).
         #[arg(long)]
         power_limit: Option<u8>,
+        /// Beeper volume (0 = off).
         #[arg(long)]
         volume: Option<u8>,
+        /// Screen-off timeout (raw device value).
         #[arg(long)]
         screen_off: Option<u8>,
+        /// Auto-shutdown timeout (raw device value).
         #[arg(long)]
         shutdown: Option<u8>,
+        /// Screen orientation.
         #[arg(long)]
         screen_direction: Option<u8>,
     },
@@ -396,26 +409,74 @@ fn watch(cli: &Cli, a: &WatchArgs) -> Result<()> {
     Ok(())
 }
 
+const SETTING_KEYS: &str = "power-limit, volume, screen-off, shutdown, screen-direction";
+
+/// Apply one `key = value` to the settings command.
+fn apply_setting(s: &mut SystemSetCommand, key: &str, value: &str) -> Result<()> {
+    let key = key
+        .trim_start_matches('-')
+        .replace('_', "-")
+        .to_ascii_lowercase();
+    let v: u8 = value
+        .trim()
+        .parse()
+        .with_context(|| format!("value for {key} must be a number 0–255, got {value:?}"))?;
+    match key.as_str() {
+        "power-limit" => s.power_limit = v,
+        "volume" => s.volume = v,
+        "screen-off" => s.screen_off = v,
+        "shutdown" => s.shutdown = v,
+        "screen-direction" => s.screen_direction = v,
+        _ => anyhow::bail!("unknown setting {key:?} (expected one of: {SETTING_KEYS})"),
+    }
+    Ok(())
+}
+
+/// Parse `KEY VALUE` / `KEY=VALUE` tokens.
+fn parse_pairs(tokens: &[String]) -> Result<Vec<(String, String)>> {
+    let mut out = Vec::new();
+    let mut it = tokens.iter();
+    while let Some(t) = it.next() {
+        if let Some((k, v)) = t.split_once('=') {
+            out.push((k.to_string(), v.to_string()));
+        } else {
+            let v = it
+                .next()
+                .with_context(|| format!("missing value for setting {t:?}"))?;
+            out.push((t.clone(), v.clone()));
+        }
+    }
+    Ok(out)
+}
+
+fn print_settings(s: &mp305::types::SystemSettings) {
+    println!("power-limit:      {}", s.power_limit);
+    println!("volume:           {}", s.volume);
+    println!("screen-off:       {}", s.screen_off);
+    println!("shutdown:         {}", s.shutdown);
+    println!("screen-direction: {}", s.screen_direction);
+    println!("slope steps:      {} (read-only here)", s.slope_steps);
+    println!("current over:     {} (read-only here)", s.current_over);
+    if let Some(u) = s.usb_line {
+        println!("usb line:         {u} (read-only here)");
+    }
+}
+
 fn settings(cli: &Cli, cmd: Option<&SettingsCmd>) -> Result<()> {
+    // Validate arguments before touching the device.
+    let pairs = match cmd {
+        Some(SettingsCmd::Set { pairs, .. }) => parse_pairs(pairs)?,
+        _ => Vec::new(),
+    };
     let mut psu = open(cli)?;
     let cur = psu.system_settings()?;
     match cmd {
-        None | Some(SettingsCmd::Show { json: false }) => {
-            println!("power limit:      {}", cur.power_limit);
-            println!("volume:           {}", cur.volume);
-            println!("screen off:       {}", cur.screen_off);
-            println!("auto shutdown:    {}", cur.shutdown);
-            println!("screen direction: {}", cur.screen_direction);
-            println!("slope steps:      {}", cur.slope_steps);
-            println!("current over:     {}", cur.current_over);
-            if let Some(u) = cur.usb_line {
-                println!("usb line:         {u}");
-            }
-        }
+        None | Some(SettingsCmd::Show { json: false }) => print_settings(&cur),
         Some(SettingsCmd::Show { json: true }) => {
             println!("{}", serde_json::to_string_pretty(&cur)?)
         }
         Some(SettingsCmd::Set {
+            pairs: _,
             power_limit,
             volume,
             screen_off,
@@ -423,24 +484,28 @@ fn settings(cli: &Cli, cmd: Option<&SettingsCmd>) -> Result<()> {
             screen_direction,
         }) => {
             let mut s = SystemSetCommand::from(&cur);
-            if let Some(v) = power_limit {
-                s.power_limit = *v;
+            let flags = [
+                ("power-limit", power_limit),
+                ("volume", volume),
+                ("screen-off", screen_off),
+                ("shutdown", shutdown),
+                ("screen-direction", screen_direction),
+            ];
+            let mut changes: Vec<(String, String)> = flags
+                .iter()
+                .filter_map(|(k, v)| v.map(|v| (k.to_string(), v.to_string())))
+                .collect();
+            changes.extend(pairs);
+            if changes.is_empty() {
+                anyhow::bail!(
+                    "nothing to set — e.g. `mp305 settings set volume 1` (keys: {SETTING_KEYS})"
+                );
             }
-            if let Some(v) = volume {
-                s.volume = *v;
-            }
-            if let Some(v) = screen_off {
-                s.screen_off = *v;
-            }
-            if let Some(v) = shutdown {
-                s.shutdown = *v;
-            }
-            if let Some(v) = screen_direction {
-                s.screen_direction = *v;
+            for (k, v) in &changes {
+                apply_setting(&mut s, k, v)?;
             }
             psu.set_system_settings(&s)?;
-            let after = psu.system_settings()?;
-            println!("{}", serde_json::to_string_pretty(&after)?);
+            print_settings(&psu.system_settings()?);
         }
     }
     Ok(())
@@ -571,4 +636,47 @@ fn charge(cli: &Cli, cmd: &ChargeCmd) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sv(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn pairs_accept_space_and_equals_forms() {
+        let p = parse_pairs(&sv(&["volume", "1", "screen_off=2", "--shutdown", "30"])).unwrap();
+        assert_eq!(
+            p,
+            vec![
+                ("volume".into(), "1".into()),
+                ("screen_off".into(), "2".into()),
+                ("--shutdown".into(), "30".into())
+            ]
+        );
+        assert!(parse_pairs(&sv(&["volume"])).is_err());
+    }
+
+    #[test]
+    fn apply_setting_normalizes_keys_and_validates() {
+        let mut s = SystemSetCommand {
+            power_limit: 90,
+            volume: 0,
+            screen_off: 1,
+            shutdown: 30,
+            screen_direction: 1,
+            slope_steps: 500,
+            current_over: 50,
+            usb_line: Some(0),
+        };
+        apply_setting(&mut s, "volume", "1").unwrap();
+        apply_setting(&mut s, "screen_off", "3").unwrap();
+        apply_setting(&mut s, "--Power-Limit", "80").unwrap();
+        assert_eq!((s.volume, s.screen_off, s.power_limit), (1, 3, 80));
+        assert!(apply_setting(&mut s, "volume", "300").is_err());
+        assert!(apply_setting(&mut s, "brightness", "1").is_err());
+    }
 }
