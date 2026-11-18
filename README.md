@@ -1,6 +1,7 @@
 # mp305
 
 [![CI](https://github.com/mstaack/isdt-mp305-control/actions/workflows/ci.yml/badge.svg)](https://github.com/mstaack/isdt-mp305-control/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/mp305)](https://crates.io/crates/mp305)
 [![Release](https://img.shields.io/github/v/release/mstaack/isdt-mp305-control)](https://github.com/mstaack/isdt-mp305-control/releases/latest)
 
 Command-line tool and Rust library to control the **ISDT MP305B** (and MP305A) smart bench power supply
@@ -29,11 +30,13 @@ curl --proto '=https' --tlsv1.2 -LsSf https://github.com/mstaack/isdt-mp305-cont
 This installs `mp305` into `~/.cargo/bin` and adds it to your `PATH` (open a new terminal afterwards).
 Binaries and checksums are also on the [releases page](https://github.com/mstaack/isdt-mp305-control/releases).
 
-**From source** (needs [Rust](https://rustup.rs)):
+**With Cargo** (needs [Rust](https://rustup.rs)) — from [crates.io](https://crates.io/crates/mp305):
 
 ```sh
-cargo install --git https://github.com/mstaack/isdt-mp305-control
+cargo install mp305
 ```
+
+As a library: `cargo add mp305` ([docs](https://docs.rs/mp305)).
 
 **Linux permissions** — let your user access the device without root:
 

@@ -10,6 +10,7 @@ readme = "README.md"
 keywords = ["isdt", "mp305", "power-supply", "hid", "cli"]
 categories = ["command-line-utilities", "hardware-support"]
 rust-version = "1.85"
+include = ["src/**/*.rs", "Cargo.toml", "Cargo.lock", "README.md", "LICENSE"]
 
 [dependencies]
 anyhow = "1.0.104"
